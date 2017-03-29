@@ -1,8 +1,10 @@
 # twitter-wall
 
 App can handle multiple tags and do it efficiently
-![one tag](/screenshots/one tag.png?raw=true "One tag")
-![two tags](/screenshots/two tags.png?raw=true "Two tags")
+
+![one tag](https://raw.githubusercontent.com/KirillTim/twitter-wall/master/screenshots/one%20tag.png)
+
+![two tags](https://raw.githubusercontent.com/KirillTim/twitter-wall/master/screenshots/two%20tags.png)
 
 ### I'm totally not a frontend developer, so UI is pretty poor. Sorry
 
