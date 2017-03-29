@@ -1,25 +1,44 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Test</title>
+    <title>Twitter Wall App</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.1.2/sockjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/2.2.4/vue.min.js"></script>
     <script src="js/vertx-eventbus.js"></script>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
 </head>
 <body>
-<div id="app">
+<div id="app" style="width:1000px; margin: auto">
     <header>
-        <div class="tracked-tag">tags: {{ currentTag }}</div>
+        <div class="header">
+            <h1>{{ currentTags }}</h1>
+        </div>
         <form v-on:submit.prevent="onSubmit" id="input-form" autocomplete="off">
             <input v-model="tagInput" type="text" placeholder="Hashtags">
             <button class="primary">Go</button>
         </form>
     </header>
-    <div id="tweets" class="row">
-        <div v-for="tweet in tweets">
-            <p v-html="tweet"></p>
+    <div v-if="tweets.length > 0" class="tweets-list">
+        <div id="tweets" class="row">
+            <div v-for="tweet in tweets">
+                <ul class="list-group">
+                    <li class="list-group-item">
+                        <a v-bind:href="tweet.userUrl" target="_blank" class="section info">
+                            <img v-bind:src="tweet.userPicUrl" class="user-pic"/>
+                            <span class="username">@{{ tweet.userName }}</span>
+                        </a>
+                    </li>
+                    <li class="list-group-item">{{ tweet.text }}</li>
+                    <li class="list-group-item">{{ tweet.time }}</li>
+                </ul>
+            </div>
         </div>
     </div>
+    <div v-else class="empty-list">
+        <h1>Waiting for {{ currentTags }}</h1>
+    </div>
+
 </div>
 <script>
     var eb = new EventBus('/eventbus/');
@@ -27,28 +46,42 @@
     var onMsg = function (e, m) {
         var body = m.body;
         console.log("get:" + body);
-        app.tweets.push(body);
+        tweet = JSON.parse(body);
+        tweet.userUrl = "https://twitter.com/" + tweet.userName;
+        arr = new Date(tweet.time).toString().split(' ');
+        tweet.time = arr.slice(0, arr.length - 2).join(' '); //OMG!!
+        console.log("parsed tweet:" + tweet);
+        app.tweets.push(tweet);
     };
 
     var app = new Vue({
         el: "#app",
         data: {
-            currentTag: null,
+            currentTags: null,
             tweets: [],
             tagInput: ""
         },
         methods: {
             onSubmit: function () {
-                var newTag = this.tagInput;
-                if (newTag.length == 0) {
+                //TODO: validate input
+                var newTags = this.tagInput.split(' ');
+                newTags = newTags.map(function (x) {
+                    x = x.toLowerCase();
+                    if (x.startsWith("#"))
+                        return x.substr(1);
+                    else
+                        return x;
+                });
+
+                if (newTags.length == 0) {
                     return;
                 }
-                if (this.currentTag) {
-                    eb.unregisterHandler("hashtags:" + this.currentTag.toLowerCase(), onMsg);
+                if (this.currentTags) {
+                    eb.unregisterHandler("hashtags:" + this.currentTags, onMsg);
                 }
-                console.log("new tag: " + newTag.toLowerCase());
-                eb.registerHandler("hashtags:" + newTag.toLowerCase(), onMsg);
-                this.currentTag = newTag;
+                console.log("new tags: " + newTags);
+                eb.registerHandler("hashtags:" + newTags, onMsg);
+                this.currentTags = newTags;
                 this.tweets = [];
                 this.tagInput = "";
             }
