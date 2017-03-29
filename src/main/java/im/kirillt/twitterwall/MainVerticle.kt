@@ -38,7 +38,7 @@ class MainVerticle : AbstractVerticle() {
         val ebHandler = SockJSHandler.create(vertx).bridge(opts, { eventHandler ->
             val eventType = eventHandler.type()
             if (eventType == BridgeEventType.REGISTER || eventType == BridgeEventType.UNREGISTER) {
-                synchronized(requestedTags, {
+                synchronized(requestedTags, { //just in case
                     //TODO: fix concurrency problems
                     val clientTags = getTags(eventHandler)
                     val addresses = requestedTags.getOrPut(clientTags, { hashMapOf() })
@@ -91,10 +91,11 @@ class MainVerticle : AbstractVerticle() {
             }
         }
         twitterStream?.onException { exception ->
-            logger.error(exception.message)
+            //logger.error(exception.message)
         }
 
         server.requestHandler(router::accept).listen(config().getInteger("port", 8080))
+        logger.info("server listening on port ${server.actualPort()}")
     }
 
     companion object {
