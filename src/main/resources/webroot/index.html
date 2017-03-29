@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.1.2/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/2.2.4/vue.min.js"></script>
+    <script src="js/vertx-eventbus.js"></script>
+</head>
+<body>
+<div id="app">
+    <header>
+        <div class="tracked-tag">tags: {{ currentTag }}</div>
+        <form v-on:submit.prevent="onSubmit" id="input-form" autocomplete="off">
+            <input v-model="tagInput" type="text" placeholder="Hashtags">
+            <button class="primary">Go</button>
+        </form>
+    </header>
+    <div id="tweets" class="row">
+        <div v-for="tweet in tweets">
+            <p v-html="tweet"></p>
+        </div>
+    </div>
+</div>
+<script>
+    var eb = new EventBus('/eventbus/');
+
+    var onMsg = function (e, m) {
+        var body = m.body;
+        console.log("get:" + body);
+        app.tweets.push(body);
+    };
+
+    var app = new Vue({
+        el: "#app",
+        data: {
+            currentTag: null,
+            tweets: [],
+            tagInput: ""
+        },
+        methods: {
+            onSubmit: function () {
+                var newTag = this.tagInput;
+                if (newTag.length == 0) {
+                    return;
+                }
+                if (this.currentTag) {
+                    eb.unregisterHandler("hashtags:" + this.currentTag.toLowerCase(), onMsg);
+                }
+                console.log("new tag: " + newTag.toLowerCase());
+                eb.registerHandler("hashtags:" + newTag.toLowerCase(), onMsg);
+                this.currentTag = newTag;
+                this.tweets = [];
+                this.tagInput = "";
+            }
+        }
+    });
+
+</script>
+</body>
+</html>
