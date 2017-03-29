@@ -105,7 +105,7 @@ class MainVerticle : AbstractVerticle() {
             val address = event.rawMessage.getString("address", "")
             val tags = hashSetOf<String>()
             if (address.startsWith(PATH_PREFIX)) {
-                tags.addAll(address.drop(PATH_PREFIX.length).split(" ").filter(String::isNotEmpty))
+                tags.addAll(address.drop(PATH_PREFIX.length).split(",").filter(String::isNotEmpty))
             }
             return tags
         }

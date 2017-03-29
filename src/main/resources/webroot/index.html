@@ -51,7 +51,7 @@
         arr = new Date(tweet.time).toString().split(' ');
         tweet.time = arr.slice(0, arr.length - 2).join(' '); //OMG!!
         console.log("parsed tweet:" + tweet);
-        app.tweets.push(tweet);
+        app.tweets.unshift(tweet);
     };
 
     var app = new Vue({
