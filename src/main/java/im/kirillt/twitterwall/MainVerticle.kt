@@ -2,6 +2,7 @@ package im.kirillt.twitterwall
 
 import io.vertx.core.AbstractVerticle
 import io.vertx.core.json.JsonObject
+import io.vertx.core.logging.LoggerFactory
 import io.vertx.ext.web.Router
 import io.vertx.ext.web.handler.StaticHandler
 import io.vertx.ext.web.handler.sockjs.BridgeEvent
@@ -10,16 +11,22 @@ import io.vertx.ext.web.handler.sockjs.SockJSHandler
 import io.vertx.kotlin.ext.web.handler.sockjs.BridgeOptions
 import io.vertx.kotlin.ext.web.handler.sockjs.PermittedOptions
 import twitter4j.FilterQuery
+import twitter4j.Status
 import twitter4j.TwitterStream
 import twitter4j.TwitterStreamFactory
 import twitter4j.conf.Configuration
 import twitter4j.conf.ConfigurationBuilder
 import kotlin.collections.HashMap
+import com.fasterxml.jackson.databind.ObjectMapper
+
+
 
 class MainVerticle : AbstractVerticle() {
+    private val logger = LoggerFactory.getLogger(MainVerticle::class.java)
 
     //<set of tags> to map<address, clients count>
     val requestedTags = hashMapOf<Set<String>, HashMap<String, Int>>()
+    var allRequestedTags = hashSetOf<String>()
     var twitterStream: TwitterStream? = null
 
     override fun start() {
@@ -29,39 +36,37 @@ class MainVerticle : AbstractVerticle() {
         val opts = BridgeOptions(outboundPermitted = listOf(PermittedOptions(addressRegex = "$PATH_PREFIX.+")))
 
         val ebHandler = SockJSHandler.create(vertx).bridge(opts, { eventHandler ->
-
-            when (eventHandler.type()) {
-
-                BridgeEventType.REGISTER -> {
-                    println("register")
-                    val tags = getTags(eventHandler)
-                    val addresses = requestedTags.getOrDefault(tags, hashMapOf())
-                    val eventAddress = eventHandler.rawMessage.getString("address")
-                    println(tags)
+            val eventType = eventHandler.type()
+            if (eventType == BridgeEventType.REGISTER || eventType == BridgeEventType.UNREGISTER) {
+                synchronized(requestedTags, {
                     //TODO: fix concurrency problems
-                    addresses.put(eventAddress, addresses.getOrDefault(eventAddress, 0) + 1)
-                    requestedTags[tags] = addresses
-                    if (addresses.size == 1) {
-                        twitterStream?.filter(FilterQuery(*requestedTags.keys.flatten().toSet().map { '#' + it }.toTypedArray()))
-                    }
-                }
-                BridgeEventType.UNREGISTER -> {
-                    println("unregister")
-                    val tags = getTags(eventHandler)
-                    val addresses = requestedTags.getOrDefault(tags, hashMapOf())
+                    val clientTags = getTags(eventHandler)
+                    val addresses = requestedTags.getOrPut(clientTags, { hashMapOf() })
                     val eventAddress = eventHandler.rawMessage.getString("address")
-                    println(tags)
-                    addresses.put(eventAddress, addresses.getOrDefault(eventAddress, 0) - 1)
-                    if (addresses[eventAddress] == 0) {
-                        addresses.remove(eventAddress)
+                    if (eventType == BridgeEventType.REGISTER) {
+                        logger.info("$eventAddress registered for tags: $clientTags")
+                        addresses.put(eventAddress, addresses.getOrDefault(eventAddress, 0) + 1)
+                        if (!allRequestedTags.containsAll(clientTags)) {
+                            allRequestedTags.addAll(clientTags)
+                            twitterStream?.filter(FilterQuery(*allRequestedTags.map { '#' + it }.toTypedArray()))
+                        }
+                    } else {
+                        logger.info("$eventAddress unregistered for tags: $clientTags")
+                        addresses.put(eventAddress, addresses.getOrDefault(eventAddress, 0) - 1)
+                        if (addresses[eventAddress] == 0) {
+                            addresses.remove(eventAddress)
+                        }
+                        if (addresses.isEmpty()) {
+                            requestedTags.remove(clientTags)
+                            val restTags = requestedTags.keys.flatten().toHashSet()
+                            if (restTags.size < allRequestedTags.size) {
+                                allRequestedTags = restTags
+                                twitterStream?.filter(FilterQuery(*allRequestedTags.map { '#' + it }.toTypedArray()))
+                            }
+                        }
                     }
-                    if (addresses.isEmpty()) {
-                        requestedTags.remove(tags)
-                        twitterStream?.filter(FilterQuery(*requestedTags.keys.flatten().toSet().map { '#' + it }.toTypedArray()))
-                    }
-                }
-                else -> {
-                }
+
+                })
             }
             eventHandler.complete(true)
         })
@@ -75,17 +80,18 @@ class MainVerticle : AbstractVerticle() {
         val eventBus = vertx.eventBus()
         twitterStream?.onStatus { status ->
             val statusTags = status.hashtagEntities.map { it.text }.filterNotNull()
-            println("get: $status")
+            logger.debug("get: $status")
+            val jsonStr = ObjectMapper().writeValueAsString(Tweet.fromStatus(status))
             for ((tags, addresses) in requestedTags) {
                 if (statusTags.containsAll(tags)) {
                     for (address in addresses.keys) {
-                        eventBus.publish(address, status.text)
+                        eventBus.publish(address, jsonStr)
                     }
                 }
             }
         }
         twitterStream?.onException { exception ->
-            println(exception)
+            logger.error(exception.message)
         }
 
         server.requestHandler(router::accept).listen(config().getInteger("port", 8080))
@@ -112,6 +118,14 @@ class MainVerticle : AbstractVerticle() {
                     .build()
         }
 
-        data class Tweet(val text: String)
+        data class Tweet(val text: String, val userName: String,
+                         val userPicUrl: String, val time: Long, val id: String) {
+            companion object {
+                fun fromStatus(status: Status) =
+                        Tweet(status.text, status.user.screenName,
+                                status.user.miniProfileImageURLHttps, status.createdAt.time, "${status.id}")
+
+            }
+        }
     }
 }
